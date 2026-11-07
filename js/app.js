@@ -4,6 +4,7 @@
   var app = document.getElementById("app");
   var TAK = window.TAKUITSU || [];
   var ANA = window.ANAUME || [];
+  var YOU = window.YOUGO || [];
 
   /* ---------- theme ---------- */
   var tt = document.getElementById("themeToggle");
@@ -68,13 +69,22 @@
     var c2 = el(
       '<button class="mode-card" id="goAna">' +
       '<div class="ic">✍️</div><h2>穴埋め演習</h2>' +
-      '<p>記述式でよく問われる重要語句・数値の空欄をタップして答えを確認。暗記カード方式で解説も読めます。</p>' +
-      '<span class="count">全' + ANA.length + 'テーマ</span>' +
+      '<p>記述式の解答例（過去問・予想）の重要語句・数値の空欄をタップして答えを確認。暗記カード方式で解説も読めます。</p>' +
+      '<span class="count">全' + ANA.length + '問（過去問' + ANA.filter(function(x){return x.src==="past";}).length + '・予想' + ANA.filter(function(x){return (x.src||"pred")==="pred";}).length + '）</span>' +
       '</button>'
     );
     c2.addEventListener("click", anaSetup);
 
-    grid.appendChild(c1); grid.appendChild(c2);
+    var c3 = el(
+      '<button class="mode-card" id="goYou">' +
+      '<div class="ic">📚</div><h2>用語集</h2>' +
+      '<p>択一・記述に必要な重要用語を分野別に収録。定義から用語を当てる／用語から定義を確認、タップで切り替えて暗記できます。</p>' +
+      '<span class="count">全' + YOU.length + '語（' + uniq(YOU.map(function(x){return x.cat;})).length + '分野）</span>' +
+      '</button>'
+    );
+    c3.addEventListener("click", youSetup);
+
+    grid.appendChild(c1); grid.appendChild(c2); grid.appendChild(c3);
     v.appendChild(grid);
     app.appendChild(v);
     window.scrollTo(0, 0);
@@ -301,7 +311,7 @@
   }
 
   /* ========================================================= 穴埋め SETUP */
-  var anaState = { themes: [], count: 8 };
+  var anaState = { themes: [], count: 8, src: "both" };
 
   function anaSetup() {
     app.innerHTML = "";
@@ -312,6 +322,14 @@
     v.appendChild(el('<div class="crumbs"><a id="bk">← トップ</a></div>'));
     v.appendChild(el('<h2 style="margin:.1em 0 .2em">穴埋め演習の設定</h2>'));
     var p = el('<div class="panel"></div>');
+
+    // 出題範囲（過去問/予想）
+    p.appendChild(el('<div class="field"><label class="lbl">出題範囲</label>' +
+      '<div class="seg" id="anaSrc">' +
+      '<button data-v="both" class="on">両方</button>' +
+      '<button data-v="past">過去問のみ</button>' +
+      '<button data-v="pred">予想のみ</button>' +
+      '</div></div>'));
 
     var fieldWrap = el('<div class="field"><label class="lbl">テーマ（タップで選択／解除）</label></div>');
     var chips = el('<div class="chips" id="thChips"></div>');
@@ -337,6 +355,12 @@
     window.scrollTo(0, 0);
 
     v.querySelector("#bk").addEventListener("click", home);
+    v.querySelectorAll("#anaSrc button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        v.querySelectorAll("#anaSrc button").forEach(function (x) { x.classList.remove("on"); });
+        b.classList.add("on"); anaState.src = b.dataset.v; updateCount();
+      });
+    });
     v.querySelectorAll("#numRow button").forEach(function (b) {
       b.addEventListener("click", function () {
         v.querySelectorAll("#numRow button").forEach(function (x) { x.classList.remove("on"); });
@@ -344,8 +368,14 @@
       });
     });
     function selTh() { return Array.prototype.map.call(v.querySelectorAll("#thChips .chip.on"), function (c) { return c.dataset.t; }); }
-    function pool() { var ts = selTh(); return ANA.filter(function (x) { return ts.indexOf(x.theme) >= 0; }); }
-    function updateCount() { var n = pool().length; avail.textContent = "該当するテーマ：" + n + "問"; v.querySelector("#start").disabled = n === 0; }
+    function pool() {
+      var ts = selTh();
+      return ANA.filter(function (x) {
+        if (anaState.src !== "both" && (x.src || "pred") !== anaState.src) return false;
+        return ts.indexOf(x.theme) >= 0;
+      });
+    }
+    function updateCount() { var n = pool().length; avail.textContent = "該当する問題：" + n + "問"; v.querySelector("#start").disabled = n === 0; }
     updateCount();
     start.addEventListener("click", function () {
       var pl = pool(); if (!pl.length) return;
@@ -430,6 +460,157 @@
     hideAll.addEventListener("click", function () {
       v.querySelectorAll(".ana-reveal").forEach(function (b) { b.classList.remove("on"); b.textContent = "？"; });
     });
+  }
+
+  /* ========================================================= 用語集 SETUP */
+  var youState = { cats: [], dir: "d2t", count: 15 };
+
+  function youSetup() {
+    app.innerHTML = "";
+    var cats = uniq(YOU.map(function (x) { return x.cat; }));
+    if (youState.cats.length === 0) youState.cats = cats.slice();
+
+    var v = el('<section class="view"></section>');
+    v.appendChild(el('<div class="crumbs"><a id="bk">← トップ</a></div>'));
+    v.appendChild(el('<h2 style="margin:.1em 0 .2em">用語集の設定</h2>'));
+    var p = el('<div class="panel"></div>');
+
+    p.appendChild(el('<div class="field"><label class="lbl">学習方向</label>' +
+      '<div class="seg" id="youDir">' +
+      '<button data-v="d2t" class="on">定義 → 用語</button>' +
+      '<button data-v="t2d">用語 → 定義</button>' +
+      '</div></div>'));
+
+    var cWrap = el('<div class="field"><label class="lbl">分野（タップで選択／解除）</label></div>');
+    var qa = el('<div style="margin-bottom:8px"><button class="hintbtn" id="selAll">すべて選択</button> ｜ <button class="hintbtn" id="selNone">すべて解除</button></div>');
+    cWrap.appendChild(qa);
+    var chips = el('<div class="chips" id="catChips"></div>');
+    cats.forEach(function (ct) {
+      var on = youState.cats.indexOf(ct) >= 0;
+      var c = el('<label class="chip' + (on ? ' on' : '') + '" data-c="' + esc(ct) + '">' + esc(ct) + '</label>');
+      c.addEventListener("click", function () { c.classList.toggle("on"); updateCount(); });
+      chips.appendChild(c);
+    });
+    cWrap.appendChild(chips); p.appendChild(cWrap);
+
+    p.appendChild(el('<div class="field"><label class="lbl">出題数</label>' +
+      '<div class="num-row" id="numRow">' +
+      '<button data-n="10">10語</button>' +
+      '<button data-n="15" class="on">15語</button>' +
+      '<button data-n="30">30語</button>' +
+      '<button data-n="999">全部</button>' +
+      '</div></div>'));
+
+    var avail = el('<p class="note" id="avail" style="color:var(--muted);font-size:13px;margin:6px 0 0"></p>');
+    p.appendChild(avail);
+    var start = el('<div class="btn-row"><button class="btn" id="start">はじめる ▶</button></div>');
+    p.appendChild(start);
+    v.appendChild(p); app.appendChild(v);
+    window.scrollTo(0, 0);
+
+    v.querySelector("#bk").addEventListener("click", home);
+    v.querySelectorAll("#youDir button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        v.querySelectorAll("#youDir button").forEach(function (x) { x.classList.remove("on"); });
+        b.classList.add("on"); youState.dir = b.dataset.v;
+      });
+    });
+    v.querySelectorAll("#numRow button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        v.querySelectorAll("#numRow button").forEach(function (x) { x.classList.remove("on"); });
+        b.classList.add("on"); youState.count = +b.dataset.n;
+      });
+    });
+    function setChips(fn) { v.querySelectorAll("#catChips .chip").forEach(fn); updateCount(); }
+    v.querySelector("#selAll").addEventListener("click", function () { setChips(function (c) { c.classList.add("on"); }); });
+    v.querySelector("#selNone").addEventListener("click", function () { setChips(function (c) { c.classList.remove("on"); }); });
+    function selCats() { return Array.prototype.map.call(v.querySelectorAll("#catChips .chip.on"), function (c) { return c.dataset.c; }); }
+    function pool() { var cs = selCats(); return YOU.filter(function (x) { return cs.indexOf(x.cat) >= 0; }); }
+    function updateCount() { var n = pool().length; avail.textContent = "該当する用語：" + n + "語"; v.querySelector("#start").disabled = n === 0; }
+    updateCount();
+    start.addEventListener("click", function () {
+      var pl = pool(); if (!pl.length) return;
+      youState.cats = selCats();
+      var qs = shuffle(pl);
+      if (youState.count < qs.length) qs = qs.slice(0, youState.count);
+      youRun(qs);
+    });
+  }
+
+  /* ========================================================= 用語集 RUN */
+  function youRun(items) {
+    app.innerHTML = "";
+    var d2t = youState.dir === "d2t";
+    var v = el('<section class="view"></section>');
+    v.appendChild(el('<div class="crumbs"><a id="bk">← 設定に戻る</a></div>'));
+    v.appendChild(el('<h2 style="margin:.1em 0 .4em">用語集（' + items.length + '語）</h2>'));
+    v.appendChild(el('<p class="note" style="color:var(--muted);font-size:13px;margin:0 0 10px">' +
+      (d2t ? '定義を読んで、隠れた<span style="color:var(--accent);font-weight:700">用語</span>をタップで確認します。' : '用語を見て、隠れた<span style="color:var(--teal);font-weight:700">定義</span>をタップで確認します。') +
+      ' もう一度タップで隠せます。</p>'));
+
+    var ctl = el('<div class="btn-row" style="margin:0 0 4px"></div>');
+    var showAll = el('<button class="btn sec">すべて表示</button>');
+    var hideAll = el('<button class="btn sec">すべて隠す</button>');
+    ctl.appendChild(showAll); ctl.appendChild(hideAll);
+    v.appendChild(ctl);
+
+    var host = el('<div id="youHost" style="margin-top:14px"></div>');
+    items.forEach(function (it) {
+      var card = el('<div class="ana-item"></div>');
+      card.appendChild(el('<span class="theme">' + esc(it.cat) + '</span>'));
+      if (d2t) {
+        // definition shown, term hidden
+        card.appendChild(el('<div class="ana-text" style="line-height:1.9">' + esc(it.def) + '</div>'));
+        var row = el('<div style="margin-top:12px"></div>');
+        row.appendChild(el('<span style="font-size:13px;color:var(--muted)">答え（用語）：</span>'));
+        var b = document.createElement("span"); b.className = "ana-reveal"; b.setAttribute("role", "button"); b.setAttribute("tabindex", "0");
+        b.setAttribute("data-ans", it.term + (it.yomi ? "（" + it.yomi + "）" : "")); b.textContent = "？";
+        row.appendChild(b);
+        wire(b);
+        card.appendChild(row);
+      } else {
+        // term shown, definition hidden
+        card.appendChild(el('<div style="font-size:19px;font-weight:700;color:var(--teal)">' + esc(it.term) + (it.yomi ? ' <span style="font-size:13px;color:var(--muted);font-weight:500">（' + esc(it.yomi) + '）</span>' : '') + '</div>'));
+        var d = el('<div class="you-def" role="button" tabindex="0" style="margin-top:10px"><span class="you-def-ph">タップで定義を表示</span><span class="you-def-txt" style="display:none">' + esc(it.def) + '</span></div>');
+        d.addEventListener("click", function () { toggleDef(d); });
+        d.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleDef(d); } });
+        card.appendChild(d);
+      }
+      host.appendChild(card);
+    });
+    v.appendChild(host);
+
+    var nav = el('<div class="btn-row"></div>');
+    var again = el('<button class="btn">シャッフルしてもう一度</button>');
+    var reset = el('<button class="btn sec">条件を変える</button>');
+    nav.appendChild(again); nav.appendChild(reset);
+    v.appendChild(nav);
+    app.appendChild(v);
+    window.scrollTo(0, 0);
+
+    v.querySelector("#bk").addEventListener("click", youSetup);
+    reset.addEventListener("click", youSetup);
+    again.addEventListener("click", function () { youRun(shuffle(items)); });
+    showAll.addEventListener("click", function () {
+      v.querySelectorAll(".ana-reveal").forEach(function (b) { b.classList.add("on"); b.textContent = b.getAttribute("data-ans"); });
+      v.querySelectorAll(".you-def").forEach(function (d) { setDef(d, true); });
+    });
+    hideAll.addEventListener("click", function () {
+      v.querySelectorAll(".ana-reveal").forEach(function (b) { b.classList.remove("on"); b.textContent = "？"; });
+      v.querySelectorAll(".you-def").forEach(function (d) { setDef(d, false); });
+    });
+
+    function wire(b) {
+      var t = function () { var on = b.classList.toggle("on"); b.textContent = on ? b.getAttribute("data-ans") : "？"; };
+      b.addEventListener("click", t);
+      b.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); t(); } });
+    }
+    function toggleDef(d) { setDef(d, !d.classList.contains("on")); }
+    function setDef(d, on) {
+      d.classList.toggle("on", on);
+      d.querySelector(".you-def-ph").style.display = on ? "none" : "inline";
+      d.querySelector(".you-def-txt").style.display = on ? "inline" : "none";
+    }
   }
 
   /* ---------- boot ---------- */
